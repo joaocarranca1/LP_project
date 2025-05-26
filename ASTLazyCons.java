@@ -1,7 +1,7 @@
 public class ASTLazyCons implements ASTNode {
     private final ASTNode head;
     private final ASTNode tail;
-
+    
     public ASTLazyCons(ASTNode head, ASTNode tail) {
         this.head = head;
         this.tail = tail;
@@ -18,10 +18,11 @@ public class ASTLazyCons implements ASTNode {
         }, () -> {
             try {
                 IValue tVal = tail.eval(env);
-                if (!(tVal instanceof VList)) {
-                    throw new RuntimeException("Tail of lazy cons must be a list");
+                if (tVal instanceof VList) {
+                    return (VList) tVal;
                 }
-                return (VList) tVal;
+                // If the tail evaluates to something else, return empty list
+                return VLazyList.empty();
             } catch (InterpreterError e) {
                 throw new RuntimeException("Error evaluating tail in lazy cons", e);
             }
