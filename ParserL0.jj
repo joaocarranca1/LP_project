@@ -1,0 +1,334 @@
+PARSER_BEGIN(Parser)
+
+import java.util.*;
+
+public class Parser {
+}
+
+PARSER_END(Parser)
+
+SKIP :
+{
+  " "
+| "\t"
+| "\r"
+| "\n"
+}
+
+TOKEN :
+{
+
+  < LET : "let" >
+  |
+  < TRUE: "true" >
+  |
+  < FALSE: "false" >
+  |
+  < PLUS : "+" >
+  |
+  < MINUS : "-">
+  |
+  < STAR : "*">
+  |
+  < LAZY_CONS_OP : ":?" >
+  |
+  < NIL : "nil" >
+  |
+  < BAR : "|" >
+  |
+  < CONS : "cons" >
+  |
+  < CONS_OP : "::" >
+  | 
+  < MATCH : "match" >
+  |
+  < DIV : "/">
+  |
+  < LPAR : "(" >
+  |
+  < RPAR : ")" >
+  |
+  < LBRA : "{" >
+  |
+  < RBRA : "}" >
+  |
+  < EQUAL : "=" >
+  |
+  < COLON : ":" >
+  |
+  < SEMIC : ";" >
+  |
+  < TERM : ";;" >
+  |
+  < COMMA : "," >
+  |
+  < DEREF : "!" >
+  |
+  < AND : "&&" >
+  |
+  < OR : "||" >
+  |
+  < EQ : "==" >
+  |  
+  < GT : ">" >
+  |
+  < LT : "<" >
+  |
+  < GTEQ : ">=" >
+  |
+  < LTEQ : "<=" >
+  |
+  < DIF : "!=" >
+  |
+  < NOT : "~" >
+  |
+  < ASSIGN : ":=" >
+  |
+  < BOX : "box" >
+  |
+  < IF : "if" >
+  |
+  < ELSE : "else" >
+  |
+  < WHILE : "while" >
+  |
+  < PRINT : "print" >
+  |
+  < PRINTLN : "println" >
+  |
+  < FN : "fn" >
+  |
+  <ARROW : "=>">
+  |
+  <LISTARROW : "->">
+  |
+  < String: "\"" ( (~["\"","\\"]) | ("\\" ( ["n","t","b","r","f","\\","\""] ) ) )* "\"" >
+  |
+  < Id: ["a"-"z","A"-"Z"] ( ["a"-"z","A"-"Z","0"-"9"] )* >
+  |
+  < Num: (["0"-"9"]) + >
+}
+
+ASTNode Start():
+{ ASTNode t; }
+{
+    <EOF> {return null;}
+  | t = Let() <TERM> { return t; }
+}
+
+ASTNode Let() :
+{ Token n; 
+  ASTNode t, e1, e2;
+  List<Bind> decls  = new ArrayList<Bind>();;
+}
+{ 
+    (
+    t = Seq()
+    |
+    ((<LET>  n=<Id>  <EQUAL> e1 = BA() <SEMIC>
+      { decls.add(new Bind(n.image,e1)); }
+     )+
+        e2 = Seq() { t = new ASTLet(decls, e2); })
+    )
+    
+   { return t; }
+}
+
+ASTNode Seq() :
+{ Token op;
+  ASTNode t1, t2; }
+{
+    t1 = SeqExp()
+    (
+      ( op = <SEMIC> )
+      t2 = SeqExp()
+      {
+          t1 = new ASTSeq(t1, t2);
+      }
+    )*
+    { return t1; }
+}
+
+
+ASTNode SeqExp() :
+{Token op;
+ ASTNode t1, t2;}
+{
+  t1 = BA()
+  (
+    ( op=<ASSIGN> ) t2 = BA()
+    {
+      t1 = new ASTAssign(t1, t2);
+    }
+  )*
+  { return t1; }
+}
+
+
+ASTNode BA() :
+{
+    Token op;
+    ASTNode t1, t2;
+}
+{
+    t1 = BM() 
+    (
+        ( op = <OR> ) t2 = BM() 
+        {
+            t1 = new ASTOr(t1, t2);
+        }
+    )*
+    { return t1; }
+}
+
+ASTNode BM() :
+{
+    Token op;
+    ASTNode t1, t2;
+}
+{
+    t1 = Rel()
+    (
+        ( op = <AND> ) t2 = Rel() 
+        {
+            t1 = new ASTAnd(t1, t2);
+        }
+    )*
+    { return t1; }
+}
+
+
+
+ASTNode Rel() :
+{Token op;
+  ASTNode t1, t2;}
+{
+     t1 = ListExpr() 
+     ( 
+       ( op=<EQ> | op=<GT> | op=<LT> | op=<GTEQ> | op=<LTEQ> | op=<DIF>) 
+       t2 = ListExpr() 
+       {
+         switch (op.kind) {
+           case EQ: t1 = new ASTEq(t1, t2); break;
+           case GT: t1 = new ASTGt(t1, t2); break;
+           case LT: t1 = new ASTLt(t1, t2); break;
+           case GTEQ: t1 = new ASTGte(t1, t2); break;
+           case LTEQ: t1 = new ASTLte(t1, t2); break;
+           case DIF: t1 = new ASTNeq(t1, t2); break;
+         }
+       } 
+     )?
+     { return t1; } 
+}
+
+ASTNode ListExpr() :
+{ ASTNode t1, t2; Token op; }
+{
+    t1 = Exp() (
+        ( op = <CONS_OP> ) t2 = ListExpr() {
+            t1 = new ASTCons(t1, t2);
+        }
+      |
+        ( op = <LAZY_CONS_OP> ) t2 = ListExpr() {
+            t1 = new ASTLazyCons(t1, t2);
+        }
+    )?
+    { return t1; }
+}
+
+
+
+
+
+ASTNode Exp() :
+{ Token op;
+  ASTNode t1, t2; }
+{
+     t1=Term() ( ( op=<PLUS> | op=<MINUS> ) t2=Term() 
+                 { if (op.kind == PLUS) 
+                         t1 = new ASTPlus(t1,t2);
+                   else  t1 = new ASTSub(t1,t2);
+                 } 
+               ) *
+     { return t1; } 
+}
+
+ASTNode Term() :
+{Token op;
+  ASTNode t1, t2;}
+{
+     t1 = Apply() (
+     	  	 op=<STAR> t2 = Apply()   { t1 = new ASTMult(t1,t2); }
+		 |
+		 op=<DIV> t2 = Apply()  { t1 = new ASTDiv(t1,t2); }
+		 |
+		 op = <LPAR> t2 = Exp () <RPAR>  { /* TBC */ } 
+		)*
+     { return t1; } 
+}
+
+
+ASTNode Fact() :
+{ Token n, x, l, nilName; 
+  ASTNode t, e1, e2;
+  List<Bind> decls;
+  ASTNode  body, alt;
+}
+{
+   (
+      n=<Num> { t = new ASTInt(Integer.parseInt(n.image)); } 
+    | n=<TRUE> { t = new ASTBool(true); }
+    | n=<FALSE> { t = new ASTBool(false); }
+    | n=<Id> { t = new ASTId(n.image); } 
+    | <BOX> t=Fact() { t = new ASTBox(t); }
+    | <DEREF> t=Fact() { t = new ASTDeref(t); }
+    | <NIL> { t = new ASTNil(); }
+    | <CONS> <LPAR> e1=Let() <COMMA> e2=Let() <RPAR> { t = new ASTCons(e1, e2); }
+    | <MATCH> t = Let() <LBRA>
+  nilName = <NIL> <LISTARROW> e1 = Let() <BAR>
+  (
+    <LPAR> x = <Id> <CONS_OP> l = <Id> <RPAR>
+  |
+    x = <Id> <CONS_OP> l = <Id>
+  )
+  <LISTARROW> e2 = Let()
+  <RBRA>
+  { t = new ASTMatch(t, nilName.image, e1, x.image, l.image, e2); }
+
+    | <MINUS> t=Fact() { t = new ASTNeg(t); }
+    | <NOT> t=Fact() { t = new ASTNot(t); }
+    | <IF> t=BA() <LBRA> e1=Let() <RBRA> <ELSE> <LBRA> e2=Let() <RBRA> { t = new ASTIf(t, e1, e2); }
+    | <WHILE> t=BA() <LBRA> body=Let() <RBRA> {t = new ASTWhile(t, body);}
+    | <FN> n = <Id> { 
+      // Start collecting parameter names
+      List<String> params = new ArrayList<>();
+      params.add(n.image);
+  }
+  (<COMMA> n = <Id>  { 
+      // Add additional parameters
+      params.add(n.image); 
+  })*
+  <ARROW> <LBRA> e2 = Let() <RBRA> { 
+      // Build nested ASTFn nodes (currying)
+      t = e2;
+      for (int i = params.size() - 1; i >= 0; i--) {
+          t = new ASTFn(params.get(i), t);
+      }
+  }
+
+    | <PRINT> t=Fact() { t = new ASTPrint(t); }
+    | <PRINTLN> t=Fact() { t = new ASTPrintln(t); }
+    | <LPAR> t=Let() <RPAR> 
+    )
+   { return t; }
+}
+
+ASTNode Apply() :
+{ ASTNode t, arg; }
+{
+  t = Fact()
+  (
+    LOOKAHEAD(2) <LPAR> arg = Let() <RPAR> { t = new ASTApp(t, arg); }
+  )*
+  { return t; }
+}
